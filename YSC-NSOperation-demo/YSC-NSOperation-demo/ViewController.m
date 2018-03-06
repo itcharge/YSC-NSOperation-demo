@@ -23,7 +23,7 @@
     [super viewDidLoad];
 
 //    在当前线程使用子类 NSInvocationOperation
-//    [self useInvocationOperation];
+    [self useInvocationOperation];
     
 //    在其他线程使用子类 NSInvocationOperation
 //    [NSThread detachNewThreadSelector:@selector(useInvocationOperation) toTarget:self withObject:nil];
@@ -52,10 +52,13 @@
 //    线程间的通信
 //    [self communication];
     
+//    完成操作
 //    [self completionBlock];
     
-    [self initTicketStatusNotSave];
+//    不考虑线程安全
+//    [self initTicketStatusNotSave];
     
+//    考虑线程安全
 //    [self initTicketStatusSave];
 }
 
@@ -65,10 +68,10 @@
 - (void)useInvocationOperation {
     
     // 1.创建 NSInvocationOperation 对象
-    NSInvocationOperation *operation = [[NSInvocationOperation alloc] initWithTarget:self selector:@selector(task1) object:nil];
+    NSInvocationOperation *op = [[NSInvocationOperation alloc] initWithTarget:self selector:@selector(task1) object:nil];
     
     // 2.调用 start 方法开始执行操作
-    [operation start];
+    [op start];
 }
 
 /**
@@ -102,7 +105,7 @@
         }
     }];
     
-    // 2.添加额外的任务
+    // 2.添加额外的操作
     [op addExecutionBlock:^{
         for (int i = 0; i < 2; i++) {
             [NSThread sleepForTimeInterval:2];          // 模拟耗时操作
@@ -155,9 +158,9 @@
  */
 - (void)useCustomOperation {
     // 1.创建 YSCOperation 对象
-    YSCOperation *operation = [[YSCOperation alloc] init];
+    YSCOperation *op = [[YSCOperation alloc] init];
     // 2.调用 start 方法开始执行操作
-    [operation start];
+    [op start];
 }
 
 /**
@@ -311,7 +314,7 @@
         
         // 回到主线程
         [[NSOperationQueue mainQueue] addOperationWithBlock:^{
-            // 进行一些 UI 刷新等任务
+            // 进行一些 UI 刷新等操作
             for (int i = 0; i < 2; i++) {
                 [NSThread sleepForTimeInterval:2];      // 模拟耗时操作
                 NSLog(@"2---%@", [NSThread currentThread]); // 打印当前线程
@@ -320,6 +323,9 @@
     }];
 }
 
+/**
+ * 完成操作 completionBlock
+ */
 - (void)completionBlock {
     // 1.创建队列
     NSOperationQueue *queue = [[NSOperationQueue alloc] init];
@@ -344,9 +350,9 @@
     [queue addOperation:op1];
 }
 
-#pragma mark - semaphore 线程安全
+#pragma mark - 线程安全
 /**
- * 非线程安全：不使用 semaphore
+ * 非线程安全：不使用 NSLock
  * 初始化火车票数量、卖票窗口(非线程安全)、并开始卖票
  */
 - (void)initTicketStatusNotSave {
@@ -363,18 +369,18 @@
     queue2.maxConcurrentOperationCount = 1;
    
     
-    // 3.创建操作 op1
+    // 3.创建卖票操作 op1
     __weak typeof(self) weakSelf = self;
     NSBlockOperation *op1 = [NSBlockOperation blockOperationWithBlock:^{
         [weakSelf saleTicketNotSafe];
     }];
     
-    // 4.创建操作 op2
+    // 4.创建卖票操作 op2
     NSBlockOperation *op2 = [NSBlockOperation blockOperationWithBlock:^{
         [weakSelf saleTicketNotSafe];
     }];
     
-    // 5.添加操作
+    // 5.添加操作，开始卖票
     [queue1 addOperation:op1];
     [queue2 addOperation:op2];
 }
@@ -383,21 +389,23 @@
  * 售卖火车票(非线程安全)
  */
 - (void)saleTicketNotSafe {
-    while (self.ticketSurplusCount) {
+    while (1) {
         
-        //如果还有票，继续售卖
-        self.ticketSurplusCount--;
-        NSLog(@"%@", [NSString stringWithFormat:@"剩余票数：%d 窗口：%@", self.ticketSurplusCount, [NSThread currentThread]]);
-        [NSThread sleepForTimeInterval:0.2];
-    }
-    
-    if (!self.ticketSurplusCount) {
-         NSLog(@"所有火车票均已售完");
+        if (self.ticketSurplusCount > 0) {
+            
+            //如果还有票，继续售卖
+            self.ticketSurplusCount--;
+            NSLog(@"%@", [NSString stringWithFormat:@"剩余票数:%d 窗口:%@", self.ticketSurplusCount, [NSThread currentThread]]);
+            [NSThread sleepForTimeInterval:0.2];
+        } else {
+            NSLog(@"所有火车票均已售完");
+            break;
+        }
     }
 }
 
 /**
- * 线程安全：使用 semaphore 加锁
+ * 线程安全：使用 NSLock 加锁
  * 初始化火车票数量、卖票窗口(线程安全)、并开始卖票
  */
 - (void)initTicketStatusSave {
@@ -405,6 +413,7 @@
     
     self.ticketSurplusCount = 50;
     
+    self.lock = [[NSLock alloc] init];
     // 1.创建 queue1,queue1 代表北京火车票售卖窗口
     NSOperationQueue *queue1 = [[NSOperationQueue alloc] init];
     queue1.maxConcurrentOperationCount = 1;
@@ -413,18 +422,18 @@
     NSOperationQueue *queue2 = [[NSOperationQueue alloc] init];
     queue2.maxConcurrentOperationCount = 1;
     
-    // 3.创建操作 op1
+    // 3.创建卖票操作 op1
     __weak typeof(self) weakSelf = self;
     NSBlockOperation *op1 = [NSBlockOperation blockOperationWithBlock:^{
         [weakSelf saleTicketSafe];
     }];
     
-    // 4.创建操作 op2
+    // 4.创建卖票操作 op2
     NSBlockOperation *op2 = [NSBlockOperation blockOperationWithBlock:^{
         [weakSelf saleTicketSafe];
     }];
     
-    // 5.添加操作
+    // 5.添加操作，开始卖票
     [queue1 addOperation:op1];
     [queue2 addOperation:op2];
 }
@@ -433,21 +442,23 @@
  * 售卖火车票(线程安全)
  */
 - (void)saleTicketSafe {
-    while (self.ticketSurplusCount) {
+    while (1) {
         // 加锁
         [self.lock lock];
         
-        //如果还有票，继续售卖
-        self.ticketSurplusCount--;
-        NSLog(@"%@", [NSString stringWithFormat:@"剩余票数：%d 窗口：%@", self.ticketSurplusCount, [NSThread currentThread]]);
-        [NSThread sleepForTimeInterval:0.2];
-        
+        if (self.ticketSurplusCount > 0) {
+            //如果还有票，继续售卖
+            self.ticketSurplusCount--;
+            NSLog(@"%@", [NSString stringWithFormat:@"剩余票数:%d 窗口:%@", self.ticketSurplusCount, [NSThread currentThread]]);
+            [NSThread sleepForTimeInterval:0.2];
+        }
         // 解锁
         [self.lock unlock];
-    }
-    
-    if (!self.ticketSurplusCount) {
-        NSLog(@"所有火车票均已售完");
+        
+        if (self.ticketSurplusCount <= 0) {
+            NSLog(@"所有火车票均已售完");
+            break;
+        }
     }
 }
 
