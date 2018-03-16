@@ -46,6 +46,8 @@
 //    设置最大并发操作数（MaxConcurrentOperationCount）
 //    [self setMaxConcurrentOperationCount];
     
+//    设置优先级
+//    [self setQueuePriority];
 //    添加依赖
 //    [self addDependency];
     
@@ -265,6 +267,37 @@
             NSLog(@"4---%@", [NSThread currentThread]); // 打印当前线程
         }
     }];
+}
+
+/**
+ * 设置优先级
+ * 就绪状态下，优先级高的会优先执行，但是执行时间长短并不是一定的，所以优先级高的并不是一定会先执行完毕
+ */
+- (void)setQueuePriority
+{
+    NSOperationQueue *queue = [[NSOperationQueue alloc] init];
+    
+    NSBlockOperation *op1 = [NSBlockOperation blockOperationWithBlock:^{
+        
+        for (int i = 0; i < 2; i++) {
+            NSLog(@"1-----%@", [NSThread currentThread]);
+            [NSThread sleepForTimeInterval:2];
+        }
+    }];
+    [op1 setQueuePriority:(NSOperationQueuePriorityVeryLow)];
+    
+    NSBlockOperation *op2 = [NSBlockOperation blockOperationWithBlock:^{
+        
+        for (int i = 0; i < 2; i++) {
+            NSLog(@"2-----%@", [NSThread currentThread]);
+            [NSThread sleepForTimeInterval:2];
+        }
+    }];
+
+    [op2 setQueuePriority:(NSOperationQueuePriorityVeryHigh)];
+    
+    [queue addOperation:op1];
+    [queue addOperation:op2];
 }
 
 /**
